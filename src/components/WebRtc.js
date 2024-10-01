@@ -37,7 +37,7 @@ const WebRTCReact = () => {
     };
 
     const connectWebSocket = () => {
-        socketRef.current = io('https://10.80.163.177:30400', {
+        socketRef.current = io('https://hideeer.p-e.kr:3001', {
             transports: ['websocket'], // 웹소켓을 통한 전송
             secure: true, // 보안 연결 설정
         });
