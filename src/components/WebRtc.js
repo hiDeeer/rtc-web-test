@@ -12,6 +12,7 @@ const WebRTCReact = () => {
     const offerQueue = useRef([]);
     const answerQueue = useRef([]);
     const candidateQueue = useRef([]);
+    const isCallingRef = useRef(false); // 통화 중인지 여부 체크
 
     const createTurnCredential = (secret) => {
         const unixTime = Math.floor(Date.now() / 1000) + 24 * 3600; // 유효기간 24시간
@@ -88,14 +89,20 @@ const WebRTCReact = () => {
     };
 
     const startCall = async () => {
+        if (isCallingRef.current) return; // 이미 통화 중이면 중지
+        isCallingRef.current = true; // 통화 시작
+
         const localStream = await startLocalStream();
         if (!localStream) return;
 
+        // 기존 연결이 있으면 정리
         if (localConnection) {
             localConnection.close();
+            setLocalConnection(null);
         }
         if (remoteConnection) {
             remoteConnection.close();
+            setRemoteConnection(null);
         }
 
         const localPeerConnection = new RTCPeerConnection(iceServers);
@@ -131,6 +138,7 @@ const WebRTCReact = () => {
         } catch (error) {
             console.error('Error starting call:', error);
             setCallStatus('통화 시작 오류');
+            isCallingRef.current = false; // 통화 중지
         }
 
         processOfferQueue();
@@ -138,8 +146,8 @@ const WebRTCReact = () => {
     };
 
     const handleOffer = async (offer) => {
-        // 새로운 연결이 필요할 경우 새로운 RTCPeerConnection 생성
         if (!remoteConnection || remoteConnection.connectionState === 'closed') {
+            // 새로운 연결이 필요할 경우 새로운 RTCPeerConnection 생성
             const newRemoteConnection = new RTCPeerConnection(iceServers);
             setRemoteConnection(newRemoteConnection);
 
@@ -223,7 +231,6 @@ const WebRTCReact = () => {
         }
     };
 
-
     const handleRemoteIceCandidate = (candidate) => {
         if (remoteConnection) {
             const newCandidate = new RTCIceCandidate(candidate);
@@ -234,22 +241,6 @@ const WebRTCReact = () => {
             candidateQueue.current.push(candidate);
         }
     };
-
-    // const addCandidatesFromQueue = () => {
-    //     if (!remoteConnection) {
-    //         console.error('Remote connection is not established');
-    //         return;
-    //     }
-    //
-    //     if (candidateQueue.current.length > 0) {
-    //         candidateQueue.current.forEach((candidate) => {
-    //             remoteConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => {
-    //                 console.error('Error adding ICE candidate from queue:', err);
-    //             });
-    //         });
-    //         candidateQueue.current = [];
-    //     }
-    // };
 
     const processOfferQueue = () => {
         while (offerQueue.current.length > 0 && remoteConnection) {
@@ -287,11 +278,10 @@ const WebRTCReact = () => {
 
     return (
         <div>
-            <div>
-                <video ref={localVideoRef} autoPlay playsInline muted style={{ width: '300px' }} />
-                <video ref={remoteVideoRef} autoPlay playsInline style={{ width: '300px' }} />
-            </div>
+            <h1>WebRTC 통화</h1>
             <button onClick={startCall}>통화 시작</button>
+            <video ref={localVideoRef} autoPlay muted style={{ width: '300px' }} />
+            <video ref={remoteVideoRef} autoPlay style={{ width: '300px' }} />
             <p>{callStatus}</p>
         </div>
     );
