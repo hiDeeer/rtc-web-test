@@ -79,7 +79,7 @@ const WebRTCReact = () => {
     const startLocalStream = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            localVideoRef.current.srcObject = stream;
+            localVideoRef.current.srcObject = stream; // 로컬 비디오에 스트림 연결
             return stream;
         } catch (err) {
             console.error('Error accessing local media:', err);
@@ -126,7 +126,7 @@ const WebRTCReact = () => {
 
         remotePeerConnection.ontrack = (event) => {
             if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = event.streams[0];
+                remoteVideoRef.current.srcObject = event.streams[0]; // 원격 비디오에 스트림 연결
             }
         };
 
@@ -263,15 +263,22 @@ const WebRTCReact = () => {
             if (socketRef.current) {
                 socketRef.current.close();
             }
-            if (localVideoRef.current.srcObject) {
+
+            // 로컬 비디오 트랙 정리
+            if (localVideoRef.current && localVideoRef.current.srcObject) {
                 const tracks = localVideoRef.current.srcObject.getTracks();
                 tracks.forEach(track => track.stop());
+                localVideoRef.current.srcObject = null; // 해제
             }
+
+            // 로컬 및 원격 연결 종료
             if (localConnection) {
                 localConnection.close();
+                setLocalConnection(null);
             }
             if (remoteConnection) {
                 remoteConnection.close();
+                setRemoteConnection(null);
             }
         };
     }, []);
@@ -279,9 +286,9 @@ const WebRTCReact = () => {
     return (
         <div>
             <h1>WebRTC 통화</h1>
+            <video ref={localVideoRef} autoPlay muted style={{ width: '300px', height: '200px' }} />
+            <video ref={remoteVideoRef} autoPlay style={{ width: '300px', height: '200px' }} />
             <button onClick={startCall}>통화 시작</button>
-            <video ref={localVideoRef} autoPlay muted style={{ width: '300px' }} />
-            <video ref={remoteVideoRef} autoPlay style={{ width: '300px' }} />
             <p>{callStatus}</p>
         </div>
     );
