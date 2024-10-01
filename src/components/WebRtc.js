@@ -37,7 +37,10 @@ const WebRTCReact = () => {
     };
 
     const connectWebSocket = () => {
-        socketRef.current = io('https://10.80.163.177:30400');
+        socketRef.current = io('https://10.80.163.177:30400', {
+            transports: ['websocket'], // 웹소켓을 통한 전송
+            secure: true, // 보안 연결 설정
+        });
 
         socketRef.current.on('connect', () => {
             console.log('WebSocket connection established');
@@ -268,10 +271,10 @@ const WebRTCReact = () => {
             if (localVideoRef.current && localVideoRef.current.srcObject) {
                 const tracks = localVideoRef.current.srcObject.getTracks();
                 tracks.forEach(track => track.stop());
-                localVideoRef.current.srcObject = null; // 해제
+                localVideoRef.current.srcObject = null;
             }
 
-            // 로컬 및 원격 연결 종료
+            // 연결 해제
             if (localConnection) {
                 localConnection.close();
                 setLocalConnection(null);
@@ -286,10 +289,12 @@ const WebRTCReact = () => {
     return (
         <div>
             <h1>WebRTC 통화</h1>
-            <video ref={localVideoRef} autoPlay muted style={{ width: '300px', height: '200px' }} />
-            <video ref={remoteVideoRef} autoPlay style={{ width: '300px', height: '200px' }} />
-            <button onClick={startCall}>통화 시작</button>
+            <div>
+                <video ref={localVideoRef} autoPlay muted style={{ width: '300px' }} />
+                <video ref={remoteVideoRef} autoPlay style={{ width: '300px' }} />
+            </div>
             <p>{callStatus}</p>
+            <button onClick={startCall}>통화 시작</button>
         </div>
     );
 };
