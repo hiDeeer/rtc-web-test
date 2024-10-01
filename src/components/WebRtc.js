@@ -37,7 +37,7 @@ const WebRTCReact = () => {
     };
 
     const connectWebSocket = () => {
-        socketRef.current = io('http://10.80.163.177:3000');
+        socketRef.current = io('https://10.80.163.177:30400');
 
         socketRef.current.on('connect', () => {
             console.log('WebSocket connection established');
