@@ -1,5 +1,4 @@
 import React, { useRef, useState, useEffect } from 'react';
-import CryptoJS from 'crypto-js';
 import { io } from "socket.io-client";
 
 const WebRTCReact = () => {
@@ -14,32 +13,21 @@ const WebRTCReact = () => {
     const candidateQueue = useRef([]);
     const isCallingRef = useRef(false); // 통화 중인지 여부 체크
 
-    const createTurnCredential = (secret) => {
-        const unixTime = Math.floor(Date.now() / 1000) + 24 * 3600; // 유효기간 24시간
-        const username = `${unixTime}`;
-        const hmac = CryptoJS.HmacSHA1(username, secret);
-        const credential = CryptoJS.enc.Base64.stringify(hmac);
-        return { username, credential };
-    };
-
-    const turnCredential = createTurnCredential('mysecret');
-
     // STUN/TURN 서버 설정
     const iceServers = {
         iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:hideeer.p-e.kr:3478' },
             {
-                urls: 'turn:10.80.163.177:3478',
-                username: turnCredential.username,
-                credential: turnCredential.credential
+                urls: 'turn:hideeer.p-e.kr:3478',
+                username: "imnotMango",
+                credential: "test1234"
             }
         ]
     };
 
     const connectWebSocket = () => {
-        socketRef.current = io('https://hideeer.p-e.kr:3001', {
+        socketRef.current = io('wss://hideeer.p-e.kr:3001', {
             transports: ['websocket'], // 웹소켓을 통한 전송
-            secure: true, // 보안 연결 설정
         });
 
         socketRef.current.on('connect', () => {
@@ -48,8 +36,7 @@ const WebRTCReact = () => {
         });
 
         socketRef.current.on('error', (error) => {
-            console.error('WebSocket error:', error);
-            setCallStatus('WebSocket 오류 발생');
+            handleError(error);
         });
 
         socketRef.current.on('disconnect', () => {
@@ -59,6 +46,7 @@ const WebRTCReact = () => {
         });
 
         socketRef.current.on('offer', (offer) => {
+            console.log('Offer received:', offer);
             if (remoteConnection) {
                 handleOffer(offer);
             } else {
@@ -67,6 +55,7 @@ const WebRTCReact = () => {
         });
 
         socketRef.current.on('answer', (answer) => {
+            console.log('Answer received:', answer);
             if (localConnection) {
                 handleAnswer(answer);
             } else {
@@ -75,8 +64,14 @@ const WebRTCReact = () => {
         });
 
         socketRef.current.on('ice-candidate', (candidate) => {
+            console.log('ICE Candidate received:', candidate);
             handleRemoteIceCandidate(candidate);
         });
+    };
+
+    const handleError = (error) => {
+        console.error(error);
+        setCallStatus('오류 발생: ' + error.message); // UI에 오류 메시지 표시
     };
 
     const startLocalStream = async () => {
@@ -85,11 +80,48 @@ const WebRTCReact = () => {
             localVideoRef.current.srcObject = stream; // 로컬 비디오에 스트림 연결
             return stream;
         } catch (err) {
-            console.error('Error accessing local media:', err);
-            setCallStatus('로컬 미디어 접근 오류');
+            handleError(err);
             return null;
         }
     };
+
+    const createPeerConnection = () => {
+        const peerConnection = new RTCPeerConnection(iceServers);
+
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                console.log('ICE Candidate generated:', event.candidate);
+                socketRef.current.emit('ice-candidate', {
+                    type: 'ice-candidate',
+                    candidate: event.candidate,
+                });
+            }
+        };
+
+        peerConnection.ontrack = (event) => {
+            if (remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = event.streams[0]; // 원격 비디오에 스트림 연결
+                console.log('Received remote stream:', event.streams[0]);
+            }
+        };
+
+        peerConnection.oniceconnectionstatechange = () => {
+            console.log('ICE connection state:', peerConnection.iceConnectionState);
+            setCallStatus(`ICE 상태: ${peerConnection.iceConnectionState}`); // ICE 상태 UI에 표시
+
+            // 추가: ICE 상태에 따른 로깅
+            if (peerConnection.iceConnectionState === 'connected') {
+                console.log('ICE 연결이 완료되었습니다.');
+            } else if (peerConnection.iceConnectionState === 'disconnected') {
+                console.log('ICE 연결이 끊어졌습니다.');
+            } else if (peerConnection.iceConnectionState === 'failed') {
+                console.error('ICE 연결에 실패했습니다.');
+            }
+        };
+
+        return peerConnection;
+    };
+
 
     const startCall = async () => {
         if (isCallingRef.current) return; // 이미 통화 중이면 중지
@@ -108,39 +140,18 @@ const WebRTCReact = () => {
             setRemoteConnection(null);
         }
 
-        const localPeerConnection = new RTCPeerConnection(iceServers);
+        const localPeerConnection = createPeerConnection();
         localStream.getTracks().forEach(track => localPeerConnection.addTrack(track, localStream));
-
-        const remotePeerConnection = new RTCPeerConnection(iceServers);
         setLocalConnection(localPeerConnection);
-        setRemoteConnection(remotePeerConnection);
-
-        localPeerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                socketRef.current.emit('ice-candidate', event.candidate);
-            }
-        };
-
-        remotePeerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                socketRef.current.emit('ice-candidate', event.candidate);
-            }
-        };
-
-        remotePeerConnection.ontrack = (event) => {
-            if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = event.streams[0]; // 원격 비디오에 스트림 연결
-            }
-        };
 
         try {
             const offer = await localPeerConnection.createOffer();
             await localPeerConnection.setLocalDescription(offer);
             socketRef.current.emit('offer', { type: 'offer', sdp: offer.sdp });
             setCallStatus('통화 중');
+            console.log('Offer sent:', offer);
         } catch (error) {
-            console.error('Error starting call:', error);
-            setCallStatus('통화 시작 오류');
+            handleError(error);
             isCallingRef.current = false; // 통화 중지
         }
 
@@ -149,45 +160,18 @@ const WebRTCReact = () => {
     };
 
     const handleOffer = async (offer) => {
-        if (!remoteConnection || remoteConnection.connectionState === 'closed') {
-            // 새로운 연결이 필요할 경우 새로운 RTCPeerConnection 생성
-            const newRemoteConnection = new RTCPeerConnection(iceServers);
-            setRemoteConnection(newRemoteConnection);
+        const newRemoteConnection = createPeerConnection();
+        setRemoteConnection(newRemoteConnection);
 
-            newRemoteConnection.ontrack = (event) => {
-                if (remoteVideoRef.current) {
-                    remoteVideoRef.current.srcObject = event.streams[0];
-                }
-            };
-
-            newRemoteConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socketRef.current.emit('ice-candidate', event.candidate);
-                }
-            };
-
-            try {
-                await newRemoteConnection.setRemoteDescription(new RTCSessionDescription(offer));
-                const answer = await newRemoteConnection.createAnswer();
-                await newRemoteConnection.setLocalDescription(answer);
-                socketRef.current.emit('answer', { type: 'answer', sdp: answer.sdp });
-                addCandidatesFromQueue();
-            } catch (error) {
-                console.error('Error handling offer:', error);
-                setCallStatus('오퍼 처리 오류');
-            }
-        } else {
-            // 기존 연결에서 오퍼 처리
-            try {
-                await remoteConnection.setRemoteDescription(new RTCSessionDescription(offer));
-                const answer = await remoteConnection.createAnswer();
-                await remoteConnection.setLocalDescription(answer);
-                socketRef.current.emit('answer', { type: 'answer', sdp: answer.sdp });
-                addCandidatesFromQueue();
-            } catch (error) {
-                console.error('Error handling offer:', error);
-                setCallStatus('오퍼 처리 오류');
-            }
+        try {
+            await newRemoteConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await newRemoteConnection.createAnswer();
+            await newRemoteConnection.setLocalDescription(answer);
+            socketRef.current.emit('answer', { type: 'answer', sdp: answer.sdp });
+            console.log('Answer sent:', answer);
+            addCandidatesFromQueue();
+        } catch (error) {
+            handleError(error);
         }
     };
 
@@ -208,21 +192,12 @@ const WebRTCReact = () => {
             await localConnection.setRemoteDescription(new RTCSessionDescription(answer));
             addCandidatesFromQueue();
         } catch (error) {
-            console.error('Error handling answer:', error);
-            setCallStatus('응답 처리 오류');
+            handleError(error);
         }
     };
 
     const addCandidatesFromQueue = () => {
-        if (!remoteConnection) {
-            console.error('Remote connection is not established');
-            return;
-        }
-
-        // 원격 연결이 닫힌 경우, 대기열 처리 생략
-        if (remoteConnection.connectionState === 'closed') {
-            return;
-        }
+        if (!remoteConnection || remoteConnection.connectionState === 'closed') return;
 
         if (candidateQueue.current.length > 0) {
             candidateQueue.current.forEach((candidate) => {
@@ -236,8 +211,7 @@ const WebRTCReact = () => {
 
     const handleRemoteIceCandidate = (candidate) => {
         if (remoteConnection) {
-            const newCandidate = new RTCIceCandidate(candidate);
-            remoteConnection.addIceCandidate(newCandidate).catch(err => {
+            remoteConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => {
                 console.error('Error adding ICE candidate:', err);
             });
         } else {
@@ -259,6 +233,24 @@ const WebRTCReact = () => {
         }
     };
 
+    const stopCall = () => {
+        if (localConnection) {
+            localConnection.close();
+            setLocalConnection(null);
+        }
+        if (remoteConnection) {
+            remoteConnection.close();
+            setRemoteConnection(null);
+        }
+        if (localVideoRef.current && localVideoRef.current.srcObject) {
+            const tracks = localVideoRef.current.srcObject.getTracks();
+            tracks.forEach(track => track.stop());
+            localVideoRef.current.srcObject = null;
+        }
+        setCallStatus('통화 종료'); // 종료 상태 업데이트
+        isCallingRef.current = false; // 통화 중 상태 초기화
+    };
+
     useEffect(() => {
         connectWebSocket();
 
@@ -267,14 +259,14 @@ const WebRTCReact = () => {
                 socketRef.current.close();
             }
 
-            // 로컬 비디오 트랙 정리
+
+            // 로컬 비디오 스트림 중지
             if (localVideoRef.current && localVideoRef.current.srcObject) {
                 const tracks = localVideoRef.current.srcObject.getTracks();
                 tracks.forEach(track => track.stop());
                 localVideoRef.current.srcObject = null;
             }
 
-            // 연결 해제
             if (localConnection) {
                 localConnection.close();
                 setLocalConnection(null);
@@ -294,7 +286,8 @@ const WebRTCReact = () => {
                 <video ref={remoteVideoRef} autoPlay style={{ width: '300px' }} />
             </div>
             <p>{callStatus}</p>
-            <button onClick={startCall}>통화 시작</button>
+            <button onClick={startCall} disabled={callStatus === '통화 중'}>통화 시작</button>
+            <button onClick={stopCall} disabled={callStatus !== '통화 중'}>통화 종료</button>
         </div>
     );
 };
