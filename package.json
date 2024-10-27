@@ -17,7 +17,7 @@
     "webrtc-adapter": "^9.0.1"
   },
   "scripts": {
-    "start": "react-scripts start",
+    "start": "cross-env PORT=3002 HTTPS=true SSL_CRT_FILE=/etc/letsencrypt/live/hideeer.p-e.kr/cert.pem SSL_KEY_FILE=/etc/letsencrypt/live/hideeer.p-e.kr/privkey.pem react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
@@ -39,5 +39,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
   }
 }
